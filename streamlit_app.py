@@ -540,33 +540,30 @@ for column, author in zip(st.columns(4), AUTHORS):
     with column:
         render_author(*author)
 
-st.markdown('<h2 class="section-title">Instituições e artigo científico</h2>',
-            unsafe_allow_html=True)
-logo_area, article_area = st.columns([2.15, 1], gap="large")
-with logo_area:
-    show_logos()
-with article_area:
-    st.markdown("### Artigo científico")
-    st.caption("Trabalho aprovado no ENEGEP USP 2026.")
-    if PDF_FILE.exists():
-        with open(PDF_FILE, "rb") as pdf:
-            st.download_button(
-                "📄 Acessar artigo completo",
-                data=pdf.read(),
-                file_name=PDF_FILE.name,
-                mime="application/pdf",
-                use_container_width=True,
-            )
+st.markdown('<h2 class="section-title">Instituições</h2>', unsafe_allow_html=True)
+show_logos()
+
+st.markdown('<h2 class="section-title">Artigo científico aprovado</h2>', unsafe_allow_html=True)
+event_area, article_area, citation_area = st.columns([1, 1.4, 1.4], gap="large")
+with event_area:
+    event_logo = APP_DIR / "enegep_usp.png"
+    if event_logo.exists():
+        encoded_event = base64.b64encode(event_logo.read_bytes()).decode("ascii")
+        st.markdown(f'<img class="event-logo" src="data:image/png;base64,{encoded_event}" width="320" height="130" alt="Logotipo do ENEGEP na USP, edição de 2026">', unsafe_allow_html=True)
     else:
-        st.info(f'Inclua o arquivo "{PDF_FILE.name}" no diretório do app.')
-
-
-# Logo do evento no final da página (arquivo já existente no repositório).
-event_logo = APP_DIR / "enegep_usp.png"
-if event_logo.exists():
-    encoded_event = base64.b64encode(event_logo.read_bytes()).decode("ascii")
-    st.markdown(f'<img class="event-logo" src="data:image/png;base64,{encoded_event}" width="320" height="130" alt="Logotipo do ENEGEP na USP, edição de 2026">', unsafe_allow_html=True)
+        st.write("ENEGEP USP 2026")
+with article_area:
+    st.markdown("### Acesse aqui o artigo")
+    if PDF_FILE.exists():
+        st.download_button("Acessar artigo completo", data=PDF_FILE.read_bytes(), file_name=PDF_FILE.name, mime="application/pdf", use_container_width=True)
+    else:
+        st.info("Artigo completo em breve.")
+with citation_area:
+    st.markdown("### Como citar?")
+    st.write("Informações de citação e DOI serão disponibilizadas após a publicação nos anais do evento.")
+    st.caption("Informações em breve.")
 st.markdown('<p class="event-note">Trabalho aprovado no ENEGEP USP 2026</p>', unsafe_allow_html=True)
+
 with st.expander("Acessibilidade deste site"):
     st.markdown("**Site desenvolvido com recursos de acessibilidade.** Utilizamos campos identificados, descrições de logotipos, contraste de cores e organização do conteúdo para facilitar a leitura.")
     st.markdown("**Avaliação automatizada:** Lighthouse, em 30/09/2026, com pontuação de acessibilidade 84/100 na versão avaliada. O relatório apontou restrição de zoom e ausência de região principal de navegação. Essas pendências estão em acompanhamento; a pontuação não representa certificação de conformidade.")
