@@ -4,6 +4,7 @@ import re
 import unicodedata
 import os
 import base64
+import inspect
 from pathlib import Path
 
 import pandas as pd
@@ -42,7 +43,7 @@ st.markdown("""
 --gold:#e6a817;--ink:#17212b;--muted:#5d6b78;--line:#dce5ec}
 .stApp{background:#f7f9fb;color:var(--ink)}
 .block-container{max-width:1180px;padding-top:1.4rem;padding-bottom:2rem}
-header[data-testid="stHeader"]{background:transparent} #MainMenu,footer{visibility:hidden}
+header[data-testid="stHeader"]{background:transparent}
 .hero{padding:1rem 1.3rem;border-radius:18px;background:linear-gradient(125deg,#062946,#0b5f9e);
 box-shadow:0 12px 30px rgba(8,43,76,.16);margin-bottom:1.1rem}
 .hero-tag{display:inline-block;padding:.28rem .7rem;border:1px solid rgba(255,255,255,.35);
@@ -66,7 +67,7 @@ border:1px solid #a8dcc7;border-left:7px solid var(--green);border-radius:14px;m
 .dds-text{white-space:pre-line;line-height:1.65}.safety-note{background:#fff8e7;
 border-left:5px solid var(--gold);border-radius:8px;padding:.85rem 1rem;color:#5b4817;margin:1rem 0}
 .author-card{min-height:165px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:1rem}
-.author-name{color:var(--navy);font-weight:800}.author-affiliation{color:var(--muted);
+.author-name{font-size:1rem;margin:0;color:var(--navy);font-weight:800}.author-affiliation{color:var(--muted);
 font-size:.86rem;min-height:62px;margin:.3rem 0 .7rem}
 .author-links a{color:var(--blue);font-weight:700;text-decoration:none;margin-right:.8rem}
 .event-note{text-align:center;color:var(--muted);margin:1.2rem 0 .5rem;font-size:.9rem}
@@ -81,7 +82,7 @@ padding:1.25rem;box-shadow:0 4px 16px rgba(8,43,76,.05)}
 @media(max-width:600px){
   .block-container{padding:1rem .8rem 1.5rem}
   .hero{padding:.75rem .9rem;border-radius:12px}
-  .hero h1{font-size:1.75rem}.hero .hero-subtitle{font-size:1rem}
+  .hero h1{font-size:1.45rem}.hero .hero-subtitle{font-size:1rem}
   .hero p{font-size:.92rem}
   .method-flow{grid-template-columns:1fr}
   .method-step{min-height:auto;text-align:left}
@@ -113,11 +114,56 @@ padding:1.25rem;box-shadow:0 4px 16px rgba(8,43,76,.05)}
         padding: 14px;
     }
 }
-a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{
-outline:3px solid #082b4c!important;outline-offset:3px!important}
+nav{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.5rem 0 1rem}
+nav a{color:#084b7c;text-decoration:underline;padding:.65rem .4rem;min-height:44px;display:inline-flex;align-items:center}
+h2[id]{scroll-margin-top:5rem}
+.skip-link{position:absolute;left:1rem;top:-10rem;z-index:999999;background:#fff;
+color:#082b4c;padding:.8rem 1rem;border:2px solid #082b4c;border-radius:6px}
+.skip-link:focus{position:fixed;top:.8rem}
+.hero,.panel,.author-card,.dds-text{overflow-wrap:anywhere}
+@media(prefers-reduced-motion:reduce){
+  .stApp *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+.author-links a{text-decoration:underline}
+:focus-visible{
+outline:3px solid #082b4c!important;outline-offset:3px!important;
+box-shadow:0 0 0 3px #fff!important}
 .event-logo{display:block;width:100%;max-width:320px;height:130px;object-fit:contain;margin:.8rem auto}
 .accessibility-note{font-size:.9rem;line-height:1.6;color:#17212b;background:#edf6fc;padding:1rem;border-radius:10px}
 </style>""", unsafe_allow_html=True)
+
+
+# Ajustes no documento do aplicativo; não acessa a página externa da hospedagem.
+# Usa somente JavaScript fixo: nunca inserir entradas dos usuários neste trecho.
+if callable(getattr(st, "html", None)) and "unsafe_allow_javascript" in inspect.signature(st.html).parameters:
+    st.html("""<script>
+    (() => {
+        function applyAccessibility() {
+            document.documentElement.lang = "pt-BR";
+            const viewport = document.querySelector('meta[name="viewport"]');
+            if (viewport) {
+                const allowed = viewport.content.split(',').map(v => v.trim()).filter(v =>
+                    !/^(user-scalable|maximum-scale|minimum-scale)\\s*=/i.test(v));
+                viewport.content = allowed.join(',');
+            }
+            const content = document.querySelector('[data-testid="stMain"]');
+            if (content && !document.querySelector('main, [role="main"]')) {
+                content.setAttribute('role', 'main');
+                content.setAttribute('aria-label', 'Conteúdo principal do DDS SmartSelect');
+            }
+        }
+        applyAccessibility();
+        // O Streamlit monta blocos de forma assíncrona. Uma janela curta evita
+        // observadores permanentes e acúmulo a cada nova geração.
+        if (window.ddsAccessibilityObserver) window.ddsAccessibilityObserver.disconnect();
+        const observer = new MutationObserver(applyAccessibility);
+        window.ddsAccessibilityObserver = observer;
+        observer.observe(document.body, {childList: true, subtree: true});
+        setTimeout(() => observer.disconnect(), 5000);
+    })();
+    </script>""", unsafe_allow_javascript=True)
+
+st.markdown('<a class="skip-link" href="#gerar-dds">Pular para o formulário de geração</a>', unsafe_allow_html=True)
 
 
 def parse_json_response(response_text: str, expected_start: str):
@@ -355,7 +401,7 @@ def render_author(name, affiliation, links):
         f'<a href="{html.escape(url)}" target="_blank" rel="noopener noreferrer">{html.escape(label)}</a>'
         for label, url in links
     )
-    st.markdown(f"""<div class="author-card"><div class="author-name">{html.escape(name)}</div>
+    st.markdown(f"""<div class="author-card"><h3 class="author-name">{html.escape(name)}</h3>
     <div class="author-affiliation">{html.escape(affiliation)}</div>
     <div class="author-links">{links_html}</div></div>""", unsafe_allow_html=True)
 
@@ -365,16 +411,16 @@ def printable_dds(title: str, text: str) -> str:
     safe_title = html.escape(title)
     safe_text = html.escape(text).replace("\n", "<br>")
     return f"""<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><title>{safe_title}</title>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{safe_title}</title>
 <style>
 body{{font-family:Arial,sans-serif;color:#17212b;max-width:760px;margin:48px auto;
 padding:0 28px;line-height:1.65}}h1{{color:#082b4c;border-bottom:3px solid #0b5f9e;
 padding-bottom:12px}}.note{{margin-top:32px;padding:12px;background:#fff8e7;
 border-left:5px solid #e6a817;font-size:13px}}@media print{{body{{margin:0;max-width:none}}
-.note{{break-inside:avoid}}}}</style></head><body><h1>{safe_title}</h1>
+.note{{break-inside:avoid}}}}</style></head><body><main><h1>{safe_title}</h1>
 <p>{safe_text}</p><div class="note"><strong>Atenção:</strong> material de apoio.
 Verifique sua compatibilidade com os procedimentos, normas e requisitos de segurança
-aplicáveis à organização.</div></body></html>"""
+aplicáveis à organização.</div></main></body></html>"""
 
 
 st.markdown("""<section class="hero">
@@ -382,7 +428,9 @@ st.markdown("""<section class="hero">
 <h1>DDS SmartSelect</h1><p class="hero-subtitle">Seleção Inteligente de Diálogos Diários de Segurança</p>
 <p>Trabalho aprovado no ENEGEP USP 2026</p></section>""", unsafe_allow_html=True)
 
-st.markdown('<h2 class="section-title">Gerar nova recomendação</h2>', unsafe_allow_html=True)
+st.markdown('<nav aria-label="Navegação do DDS"><a href="#gerar-dds">Gerar DDS</a> · <a href="#como-funciona">Como funciona</a> · <a href="#artigo">Artigo científico</a> · <a href="#acessibilidade">Acessibilidade</a></nav>', unsafe_allow_html=True)
+
+st.markdown('<h2 id="gerar-dds" tabindex="-1" class="section-title">Gerar nova recomendação</h2>', unsafe_allow_html=True)
 with st.form("dds_form"):
     profile = st.text_input(
         "Perfil dos profissionais",
@@ -457,7 +505,7 @@ if "result" in st.session_state:
     st.markdown('<h2 class="section-title">DDS recomendado</h2>', unsafe_allow_html=True)
     st.markdown(f"""<div class="winner-card">
     <div class="winner-kicker">{selection_label}</div>
-    <div class="winner-title">{html.escape(winner)}{score_label}</div>
+    <h3 class="winner-title">{html.escape(winner)}{score_label}</h3>
     <div style="color:#5d6b78;font-weight:700;margin-bottom:.75rem;">⏱ Tempo estimado de leitura: {reading_minutes} min</div>
     <div class="dds-text">{winner_text}</div></div>""", unsafe_allow_html=True)
 
@@ -493,6 +541,11 @@ if "result" in st.session_state:
             tab1, tab2, tab3, tab4 = st.tabs(
                 ["Ranking", "Quatro alternativas", "Matriz de avaliação", "Pesos do método"])
             with tab1:
+                summary = "; ".join(
+                    f"{row['Texto']}: posição {int(row['Posição'])}, pontuação {row['Pontuação']:.4f}"
+                    for _, row in ranking.iterrows()
+                )
+                st.write("Resumo textual do ranking: " + summary + ".")
                 shown = ranking.copy()
                 shown["Pontuação"] = shown["Pontuação"].round(4)
                 left, right = st.columns([1.2, 1])
@@ -513,12 +566,12 @@ if "result" in st.session_state:
             with tab4:
                 shown_weights = weights.rename(index=LABELS).copy()
                 shown_weights.index.name = "Critério"
-                st.dataframe(shown_weights.style.format("{:.4f}"), use_container_width=True)
+                st.dataframe(shown_weights.round(4), use_container_width=True)
                 st.markdown("""O **AHP-Gaussiano** obtém pesos a partir da variabilidade
                 das avaliações. Quanto mais um critério diferencia as alternativas, maior tende
                 a ser seu peso. A pontuação final é a soma ponderada dos valores normalizados.""")
 
-st.markdown('<h2 class="section-title">Como funciona?</h2>', unsafe_allow_html=True)
+st.markdown('<h2 id="como-funciona" class="section-title">Como funciona?</h2>', unsafe_allow_html=True)
 st.markdown("""<div class="method-flow">
 <div class="method-step"><div class="step-number">ETAPA 1</div><div class="step-title">Contexto</div><div class="step-text">Digite o perfil dos profissionais e descreva o contexto necessário</div></div>
 <div class="method-step"><div class="step-number">ETAPA 2</div><div class="step-title">Geração</div><div class="step-text">Quatro alternativas por IA ou roteiros locais gratuitos</div></div>
@@ -543,7 +596,7 @@ for column, author in zip(st.columns(4), AUTHORS):
 st.markdown('<h2 class="section-title">Instituições</h2>', unsafe_allow_html=True)
 show_logos()
 
-st.markdown('<h2 class="section-title">Artigo científico aprovado</h2>', unsafe_allow_html=True)
+st.markdown('<h2 id="artigo" class="section-title">Artigo científico aprovado</h2>', unsafe_allow_html=True)
 event_area, article_area, citation_area = st.columns([1, 1.4, 1.4], gap="large")
 with event_area:
     event_logo = APP_DIR / "enegep_usp.png"
@@ -564,7 +617,8 @@ with citation_area:
     st.caption("Informações em breve.")
 st.markdown('<p class="event-note">Trabalho aprovado no ENEGEP USP 2026</p>', unsafe_allow_html=True)
 
-with st.expander("Acessibilidade deste site"):
-    st.markdown("**Site desenvolvido com recursos de acessibilidade.** Utilizamos campos identificados, descrições de logotipos, contraste de cores e organização do conteúdo para facilitar a leitura.")
-    st.markdown("**Avaliação automatizada:** Lighthouse, em 30/09/2026, com pontuação de acessibilidade 84/100 na versão avaliada. O relatório apontou restrição de zoom e ausência de região principal de navegação. Essas pendências estão em acompanhamento; a pontuação não representa certificação de conformidade.")
+st.markdown('<h2 id="acessibilidade" class="section-title">Acessibilidade</h2>', unsafe_allow_html=True)
+with st.expander("Recursos e avaliações de acessibilidade"):
+    st.markdown("**Site desenvolvido com recursos de acessibilidade.** Utilizamos campos identificados, descrições de logotipos, títulos organizados, links de navegação, foco visível e resumo textual do ranking. O layout se adapta ao celular e respeita a preferência de redução de movimento.")
+    st.markdown("**Avaliação automatizada:** Lighthouse, em 30/09/2026, com pontuação de acessibilidade 85/100 às 12h45 na versão avaliada. O relatório apontou restrição de zoom, ausência de região principal, ausência de região de navegação e contraste insuficiente no texto “Hosted with Streamlit”. Esta versão acrescenta navegação, atalho para o formulário, foco visível e resumo textual do ranking. Nas versões compatíveis do Streamlit, também ajusta o idioma, permite zoom e identifica a região principal dentro do documento do aplicativo. Esses ajustes precisam ser conferidos na página publicada. Elementos da página externa de hospedagem, incluindo “Hosted with Streamlit”, podem continuar apresentando os problemas do relatório. A pontuação não representa certificação de conformidade.")
     st.caption("Esta versão recebeu ajustes de layout e ainda precisa de nova avaliação. A verificação da página não certifica a acessibilidade dos arquivos baixados. Testes manuais com teclado, ampliação e leitor de tela complementam a avaliação automática.")
