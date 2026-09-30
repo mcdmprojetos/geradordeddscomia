@@ -35,6 +35,7 @@ AUTHORS = [
 
 st.set_page_config(page_title="DDS SmartSelect", page_icon="🦺", layout="wide",
                    initial_sidebar_state="collapsed")
+st.success("O código do DDS iniciou — teste 30/09")
 
 st.markdown("""
 <style>
