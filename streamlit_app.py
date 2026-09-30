@@ -1,12 +1,17 @@
 import html
 import json
+import re
+import unicodedata
 import os
 import base64
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from google import genai
+try:
+    from google import genai
+except ImportError:
+    genai = None
 
 APP_DIR = Path(__file__).resolve().parent
 PDF_FILE = APP_DIR / "Seleção_Inteligente_de_Textos_de_DDS.pdf"
@@ -121,7 +126,7 @@ def parse_json_response(response_text: str, expected_start: str):
     return json.loads(cleaned[start:end + 1])
 
 
-def generate_texts(client: genai.Client, profile: str, topic: str) -> dict:
+def generate_texts(client, profile: str, topic: str) -> dict:
     prompt = f"""
 Você é especialista em Segurança do Trabalho e comunicação preventiva em ambientes profissionais.
 
@@ -158,7 +163,7 @@ Retorne SOMENTE JSON válido, exatamente nesta estrutura:
     return texts
 
 
-def evaluate_texts(client: genai.Client, texts: dict) -> pd.DataFrame:
+def evaluate_texts(client, texts: dict) -> pd.DataFrame:
     prompt = f"""
 Avalie comparativamente estes DDS de 1 a 10 em: Seguranca (riscos e prevenção),
 EPIs (adequação), Clareza, Objetividade e Aplicabilidade.
@@ -185,10 +190,12 @@ Retorne somente JSON válido:
 
 
 def calculate_ranking(evaluations: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # Todos os cinco critérios do DDS são de benefício: nota maior é melhor.
+    # Desvio-padrão amostral (ddof=1), conforme o código fornecido.
     original = evaluations.set_index("Texto")[CRITERIA].astype(float)
     normalized = original.div(original.sum(axis=0), axis=1)
     means = normalized.mean(axis=0)
-    deviations = normalized.std(axis=0)
+    deviations = normalized.std(axis=0, ddof=1)
     coefficients = deviations.div(means).fillna(0)
     weight_table = pd.DataFrame({"Média": means, "Desvio-padrão": deviations,
                                  "Coeficiente de variação": coefficients})
@@ -199,7 +206,8 @@ def calculate_ranking(evaluations: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
     scores = (normalized * weight_table["Peso AHP-Gaussiano"]).sum(axis=1)
     ranking = pd.DataFrame({"Texto": scores.index, "Pontuação": scores})
     ranking = ranking.sort_values("Pontuação", ascending=False).reset_index(drop=True)
-    ranking.insert(0, "Posição", range(1, len(ranking) + 1))
+    ranking.insert(0, "Posição", ranking["Pontuação"].round(12).rank(ascending=False, method="min").astype(int))
+    ranking["Percentual"] = ranking["Pontuação"] / ranking["Pontuação"].sum() * 100
     return ranking, weight_table
 
 
@@ -210,7 +218,9 @@ def estimated_reading_time(text: str) -> int:
     words_per_minute = 130
     return max(1, round(words / words_per_minute))
 
-def get_client() -> genai.Client:
+def get_client():
+    if genai is None:
+        raise RuntimeError("Biblioteca Gemini indisponível.")
     api_key = os.getenv("GEMINI_API_KEY")
     try:
         if not api_key and "GEMINI_API_KEY" in st.secrets:
@@ -220,6 +230,79 @@ def get_client() -> genai.Client:
     if not api_key:
         raise RuntimeError("Configure GEMINI_API_KEY nos Secrets do Streamlit.")
     return genai.Client(api_key=api_key)
+
+def fold_text(text):
+    return "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+
+# Banco editorial inicial. Conteúdo geral, sujeito a revisão técnica da organização.
+LOCAL_TOPICS = [
+    ("Quedas e organização", ("oleo", "piso", "queda", "escorreg", "organizacao", "limpeza"),
+     "Observe obstáculos, resíduos e condições do piso que possam causar quedas. Comunique a condição, sinalize conforme o procedimento e providencie o tratamento por pessoa autorizada. Mantenha os caminhos livres; não improvise a limpeza de uma substância desconhecida."),
+    ("Máquinas e manutenção", ("maquina", "equipamento", "manutencao", "mecanico", "energia"),
+     "Identifique fontes de energia e possibilidades de movimento inesperado. Antes de intervir, siga o procedimento de isolamento, bloqueio e verificação da organização, executado por pessoas autorizadas. Não remova proteções nem considere um equipamento seguro apenas porque foi desligado."),
+    ("Movimentação de materiais", ("carga", "peso", "ergonomia", "transporte", "postura"),
+     "Observe peso, formato, percurso e condições de movimentação. Utilize os recursos e a ajuda previstos para a tarefa. Não improvise o levantamento de uma carga que não consegue controlar com segurança. Comunique desconforto e consulte as orientações da atividade."),
+    ("Produtos químicos", ("quimic", "solvente", "tinta", "produto", "substancia"),
+     "Confirme a identificação do produto e consulte sua ficha de dados de segurança e os procedimentos aplicáveis. Não misture produtos nem use recipientes sem identificação. As medidas de manuseio, proteção e resposta a derramamento dependem da substância e da avaliação da atividade."),
+    ("Trabalho em altura", ("altura", "andaime", "telhado", "escada"),
+     "Confirme se existem condições de queda de pessoas ou materiais. A atividade depende de planejamento, autorização e recursos de proteção definidos pelos responsáveis. Não improvise acessos ou sistemas de proteção. Esclareça como agir em emergência antes do início."),
+    ("Eletricidade", ("eletric", "choque", "painel", "tomada", "cabo"),
+     "Observe sinais de dano em cabos e equipamentos sem tocar em partes suspeitas. Comunique a condição. Intervenções elétricas exigem profissionais autorizados e os procedimentos da organização. Não improvise conexões nem presuma ausência de tensão."),
+]
+
+def local_topic_guidance(topic):
+    folded = fold_text(topic)
+    matches = [(name, guidance) for name, keys, guidance in LOCAL_TOPICS if any(k in folded for k in keys)]
+    return matches[:3]
+
+def evaluate_local_texts(texts):
+    """Rubrica textual heurística; não comprova correção técnica ou segurança."""
+    rows = []
+    for name, text in texts.items():
+        t = fold_text(text)
+        sentences = [x.split() for x in re.split(r"[.!?]", text) if x.strip()]
+        avg = sum(map(len, sentences)) / max(1, len(sentences))
+        words = len(text.split())
+        coverage = lambda keys: sum(k in t for k in keys)
+        rows.append({"Texto": name,
+            "Seguranca": min(10, 1 + coverage(["perigo", "risco", "prevenc", "procedimento", "comunique", "emergencia", "protec", "nao improv", "responsavel"])),
+            "EPIs": 1 + 3 * int("epis" in t) + 3 * int("protecao coletiva" in t) + 3 * int("riscos reais" in t),
+            "Clareza": 10 if avg <= 20 else 8 if avg <= 28 else 6,
+            "Objetividade": 10 if 300 <= words <= 550 else 8 if 180 <= words < 300 else 6,
+            "Aplicabilidade": min(10, 1 + coverage(["verifi", "confirm", "comunique", "antes", "durante", "finalizar", "responsavel", "combin", "regist"]))})
+    return pd.DataFrame(rows)[["Texto", *CRITERIA]]
+
+
+def generate_local_texts(profile: str, topic: str) -> dict:
+    """Roteiros locais: sem API, normas inventadas ou avaliação automática."""
+    context = f"Profissionais: {profile}\nSituação informada: {topic}"
+    matches = local_topic_guidance(topic)
+    guidance = "\n\n".join(f"{name}: {text}" for name, text in matches) or "Tema fora do banco local: este roteiro é geral. Confirme as medidas específicas com o responsável pela segurança da atividade."
+    common = (
+        "Antes de começar, conversem sobre a situação descrita. Identifiquem os perigos presentes "
+        "e quem pode ser afetado, incluindo colegas, visitantes e pessoas que circulam nas proximidades. "
+        "Não presumam que uma condição é segura apenas porque a atividade já foi realizada antes.\n\n"
+        "Verifiquem as condições da área, os acessos, a organização e os recursos necessários. "
+        "Se houver uma condição insegura, comuniquem ao responsável e sigam o procedimento da organização "
+        "para interromper ou não iniciar a atividade. Uma mudança no cenário exige nova verificação.\n\n"
+        "As medidas de proteção coletiva e os EPIs devem ser definidos conforme os riscos reais, "
+        "a avaliação da atividade e as orientações da organização. Este roteiro não determina quais "
+        "equipamentos são adequados para uma tarefa específica. Confirmem essa orientação com o responsável.\n\n"
+        "Durante a execução, mantenham comunicação entre os envolvidos. Não improvisem métodos, "
+        "ferramentas ou proteções. Ao perceber uma condição diferente da prevista, parem para esclarecer "
+        "como prosseguir com segurança. Em emergências, sigam o plano da organização.\n\n"
+        "Ao finalizar, verifiquem a condição da área e registrem ou comuniquem os problemas encontrados. "
+        "A prevenção depende de reconhecer os riscos, combinar medidas e verificar se elas estão funcionando."
+    )
+    approaches = [
+        ("Conversa preventiva", "Qual perigo desta situação precisamos controlar primeiro?", "Cada participante deve apontar uma condição que precisa ser verificada antes do início."),
+        ("Roteiro antes, durante e depois", "O que precisamos conferir em cada momento da atividade?", "Organizem a conversa em três momentos: preparação, execução e encerramento. Combinem quem verificará cada medida."),
+        ("Perguntas para a equipe", "O que mudou hoje e pode afetar nossa segurança?", "Peçam que a equipe explique quais condições impediriam o início da tarefa e a quem comunicar um problema."),
+        ("Compromisso de prevenção", "Qual ação concreta podemos combinar agora?", "Escolham uma medida prevista no procedimento, definam o responsável e confirmem sua execução antes de iniciar."),
+    ]
+    return {f"Texto {i}": f"DDS — {title}\n\n{context}\n\n{question}\n\n{action}\n\n{guidance}\n\n{common}\n\nFechamento: cada pessoa pode apresentar uma dúvida. Confirmem as orientações específicas com o responsável antes da atividade."
+            for i, (title, question, action) in enumerate(approaches, 1)}
+
 
 def show_logos():
     logos = [
@@ -323,31 +406,58 @@ if submitted:
     if not profile.strip() or not topic.strip():
         st.warning("Preencha o perfil do público e o tema.")
     else:
-        try:
-            with st.spinner("Gerando quatro alternativas e aplicando o AHP-Gaussiano..."):
+        client = None
+        generation_source = "Gemini"
+        with st.spinner("Preparando alternativas de DDS..."):
+            try:
                 client = get_client()
                 texts = generate_texts(client, profile.strip(), topic.strip())
-                evaluations = evaluate_texts(client, texts)
-                ranking, weights = calculate_ranking(evaluations)
-            st.session_state["result"] = (texts, evaluations, ranking, weights)
-        except Exception as error:
-            st.error(f"Não foi possível concluir a recomendação: {error}")
+            except Exception:
+                texts = generate_local_texts(profile.strip(), topic.strip())
+                generation_source = "Roteiro local gratuito"
+            evaluations = ranking = weights = None
+            if generation_source == "Gemini":
+                try:
+                    evaluations = evaluate_texts(client, texts)
+                    ranking, weights = calculate_ranking(evaluations)
+                except Exception:
+                    pass
+        evaluation_source = "Gemini"
+        if evaluations is None:
+            evaluations = evaluate_local_texts(texts)
+            ranking, weights = calculate_ranking(evaluations)
+            evaluation_source = "Regras locais — avaliação textual heurística"
+        st.session_state["result"] = (texts, evaluations, ranking, weights)
+        st.session_state["generation_source"] = generation_source
+        st.session_state["evaluation_source"] = evaluation_source
+        st.session_state["result_version"] = st.session_state.get("result_version", 0) + 1
+
 
 if "result" in st.session_state:
     texts, evaluations, ranking, weights = st.session_state["result"]
-    winner = ranking.iloc[0]["Texto"]
-    winner_score = float(ranking.iloc[0]["Pontuação"])
+    source = st.session_state.get("generation_source", "Gemini")
+    st.caption(f"Origem dos textos: {source}.")
+    if source == "Roteiro local gratuito":
+        st.info("Modo local gratuito: roteiro geral organizado com o contexto informado. Não é texto criado por IA. Revise e acrescente as medidas específicas da atividade antes de usar.")
+    if st.session_state.get("evaluation_source", "").startswith("Regras locais"):
+        st.caption("Avaliação automática local por presença de elementos e características de redação. Não confirma correção técnica, adequação dos EPIs ou ausência de riscos. Notas locais não são equivalentes a notas da IA.")
+    winner = ranking.iloc[0]["Texto"] if ranking is not None else st.selectbox("Escolha um roteiro para ler e baixar", list(texts), key=f"selected_{st.session_state.get('result_version', 0)}")
+    winner_score = float(ranking.iloc[0]["Pontuação"]) if ranking is not None else None
+    selection_label = "Alternativa priorizada pelo modelo multicritério" if ranking is not None else "Roteiro escolhido para revisão"
+    score_label = f" · Pontuação {winner_score:.4f}" if winner_score is not None else ""
+    if ranking is not None and (ranking["Pontuação"].max() - ranking["Pontuação"].min()) < 1e-10:
+        st.info("As alternativas empataram. A ordem de exibição não indica superioridade.")
     reading_minutes = estimated_reading_time(str(texts[winner]))
     winner_text = html.escape(str(texts[winner])).replace("\n", "<br>")
     st.markdown('<h3 class="section-title">DDS recomendado</h3>', unsafe_allow_html=True)
     st.markdown(f"""<div class="winner-card">
-    <div class="winner-kicker">🏆 Alternativa priorizada pelo modelo multicritério</div>
-    <div class="winner-title">{html.escape(winner)} · Pontuação {winner_score:.4f}</div>
+    <div class="winner-kicker">{selection_label}</div>
+    <div class="winner-title">{html.escape(winner)}{score_label}</div>
     <div style="color:#5d6b78;font-weight:700;margin-bottom:.75rem;">⏱ Tempo estimado de leitura: {reading_minutes} min</div>
     <div class="dds-text">{winner_text}</div></div>""", unsafe_allow_html=True)
 
     download_text = (
-        f"DDS SmartSelect - {winner}\n\n{texts[winner]}\n\n"
+        f"DDS SmartSelect - {winner}\nOrigem: {source}\nAvaliação: {st.session_state.get('evaluation_source', 'Pendente')}\n\n{texts[winner]}\n\n"
         "Atenção: material de apoio. Verifique sua compatibilidade com os "
         "procedimentos, normas e requisitos de segurança da organização."
     )
@@ -363,7 +473,7 @@ if "result" in st.session_state:
     with print_area:
         st.download_button(
             "🖨️ Baixar versão para imprimir",
-            data=printable_dds(f"DDS recomendado - {winner}", str(texts[winner])).encode("utf-8"),
+            data=printable_dds(f"DDS recomendado - {winner}", f"Origem: {source}\nAvaliação: {st.session_state.get('evaluation_source', 'Pendente')}\n\n{texts[winner]}").encode("utf-8"),
             file_name="DDS_recomendado_para_impressao.html",
             mime="text/html",
             use_container_width=True,
@@ -373,47 +483,48 @@ if "result" in st.session_state:
     sua compatibilidade com os procedimentos, normas e requisitos da organização.</div>""",
     unsafe_allow_html=True)
 
-    with st.expander("🔎 Ver análise completa e cálculo do método"):
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["Ranking", "Quatro alternativas", "Matriz de avaliação", "Pesos do método"])
-        with tab1:
-            shown = ranking.copy()
-            shown["Pontuação"] = shown["Pontuação"].round(4)
-            left, right = st.columns([1.2, 1])
-            with left:
-                st.bar_chart(ranking.set_index("Texto")["Pontuação"], color="#0b5f9e")
-            with right:
-                st.dataframe(shown, hide_index=True, use_container_width=True)
-        with tab2:
-            for name, text in texts.items():
-                with st.expander(name, expanded=name == winner):
-                    if name == winner:
-                        st.success("Alternativa recomendada")
-                    st.write(text)
-        with tab3:
-            st.dataframe(evaluations.rename(columns=LABELS), hide_index=True,
-                         use_container_width=True)
-            st.caption("As notas variam de 1 a 10 e são atribuídas comparativamente pela IA.")
-        with tab4:
-            shown_weights = weights.rename(index=LABELS).copy()
-            shown_weights.index.name = "Critério"
-            st.dataframe(shown_weights.style.format("{:.4f}"), use_container_width=True)
-            st.markdown("""O **AHP-Gaussiano** obtém pesos a partir da variabilidade
-            das avaliações. Quanto mais um critério diferencia as alternativas, maior tende
-            a ser seu peso. A pontuação final é a soma ponderada dos valores normalizados.""")
+    if ranking is not None:
+        with st.expander("🔎 Ver análise completa e cálculo do método"):
+            tab1, tab2, tab3, tab4 = st.tabs(
+                ["Ranking", "Quatro alternativas", "Matriz de avaliação", "Pesos do método"])
+            with tab1:
+                shown = ranking.copy()
+                shown["Pontuação"] = shown["Pontuação"].round(4)
+                left, right = st.columns([1.2, 1])
+                with left:
+                    st.bar_chart(ranking.set_index("Texto")["Pontuação"], color="#0b5f9e")
+                with right:
+                    st.dataframe(shown, hide_index=True, use_container_width=True)
+            with tab2:
+                for name, text in texts.items():
+                    with st.expander(name, expanded=name == winner):
+                        if name == winner:
+                            st.success("Alternativa recomendada")
+                        st.write(text)
+            with tab3:
+                st.dataframe(evaluations.rename(columns=LABELS), hide_index=True,
+                             use_container_width=True)
+                st.caption("Notas de 1 a 10. Origem: " + st.session_state.get("evaluation_source", "Pendente") + ". O cálculo multicritério não valida a segurança do conteúdo.")
+            with tab4:
+                shown_weights = weights.rename(index=LABELS).copy()
+                shown_weights.index.name = "Critério"
+                st.dataframe(shown_weights.style.format("{:.4f}"), use_container_width=True)
+                st.markdown("""O **AHP-Gaussiano** obtém pesos a partir da variabilidade
+                das avaliações. Quanto mais um critério diferencia as alternativas, maior tende
+                a ser seu peso. A pontuação final é a soma ponderada dos valores normalizados.""")
 
 st.markdown('<h3 class="section-title">Como funciona?</h3>', unsafe_allow_html=True)
 st.markdown("""<div class="method-flow">
 <div class="method-step"><div class="step-number">ETAPA 1</div><div class="step-title">Contexto</div><div class="step-text">Digite o perfil dos profissionais e descreva o contexto necessário</div></div>
-<div class="method-step"><div class="step-number">ETAPA 2</div><div class="step-title">Geração</div><div class="step-text">Quatro textos são criados por Inteligência Artificial</div></div>
-<div class="method-step"><div class="step-number">ETAPA 3</div><div class="step-title">Avaliação</div><div class="step-text">Notas em cinco critérios: Segurança, EPIs, Clareza, Objetividade e Aplicabilidade</div></div>
+<div class="method-step"><div class="step-number">ETAPA 2</div><div class="step-title">Geração</div><div class="step-text">Quatro alternativas por IA ou roteiros locais gratuitos</div></div>
+<div class="method-step"><div class="step-number">ETAPA 3</div><div class="step-title">Avaliação</div><div class="step-text">Notas pela IA ou por regras locais em cinco critérios</div></div>
 <div class="method-step"><div class="step-number">ETAPA 4</div><div class="step-title">AHP-Gaussiano</div><div class="step-text">O sistema aplica o método de decisão</div></div>
 <div class="method-step"><div class="step-number">ETAPA 5</div><div class="step-title">Recomendação</div><div class="step-text">Ranking e melhor DDS</div></div>
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<h3 class="section-title">Sobre o método</h3>', unsafe_allow_html=True)
 st.markdown("""<div class="panel">O <strong>DDS SmartSelect</strong> integra IA
-Generativa e AHP-Gaussiano. A IA cria quatro alternativas e avalia os textos segundo
+Generativa e AHP-Gaussiano, com alternativa local gratuita em caso de indisponibilidade. Os roteiros locais são gerais e precisam de adaptação pelo responsável. A avaliação pode ser feita pela IA ou por regras textuais locais segundo
 segurança, EPIs, clareza, objetividade e aplicabilidade. Essas avaliações formam uma
 matriz de decisão, processada para produzir pesos, ranking e recomendação. Assim, o
 sistema não apenas gera um texto: ele compara alternativas de maneira estruturada.</div>""",
