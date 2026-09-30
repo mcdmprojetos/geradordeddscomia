@@ -35,7 +35,6 @@ AUTHORS = [
 
 st.set_page_config(page_title="DDS SmartSelect", page_icon="🦺", layout="wide",
                    initial_sidebar_state="collapsed")
-st.success("O código do DDS iniciou — teste 30/09")
 
 st.markdown("""
 <style>
@@ -44,12 +43,12 @@ st.markdown("""
 .stApp{background:#f7f9fb;color:var(--ink)}
 .block-container{max-width:1180px;padding-top:1.4rem;padding-bottom:2rem}
 header[data-testid="stHeader"]{background:transparent} #MainMenu,footer{visibility:hidden}
-.hero{padding:2rem 2.2rem;border-radius:18px;background:linear-gradient(125deg,#062946,#0b5f9e);
+.hero{padding:1rem 1.3rem;border-radius:18px;background:linear-gradient(125deg,#062946,#0b5f9e);
 box-shadow:0 12px 30px rgba(8,43,76,.16);margin-bottom:1.1rem}
 .hero-tag{display:inline-block;padding:.28rem .7rem;border:1px solid rgba(255,255,255,.35);
 border-radius:999px;color:#fff;font-size:.78rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-.hero h1{color:#fff;font-size:2.35rem;margin:.65rem 0 .2rem}
-.hero h2{color:#dceefa;font-size:1.15rem;font-weight:500;margin:0}
+.hero h1{color:#fff;font-size:1.85rem;margin:.4rem 0 .2rem}
+.hero .hero-subtitle{color:#dceefa;font-size:1.15rem;font-weight:500;margin:0}
 .hero p{color:#c9e1f1;margin:.8rem 0 0;max-width:800px}
 .section-title{color:var(--navy);margin:1.3rem 0 .7rem}
 .panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:1.15rem 1.25rem;
@@ -81,8 +80,8 @@ padding:1.25rem;box-shadow:0 4px 16px rgba(8,43,76,.05)}
 }
 @media(max-width:600px){
   .block-container{padding:1rem .8rem 1.5rem}
-  .hero{padding:1.25rem;border-radius:14px}
-  .hero h1{font-size:1.75rem}.hero h2{font-size:1rem}
+  .hero{padding:.75rem .9rem;border-radius:12px}
+  .hero h1{font-size:1.75rem}.hero .hero-subtitle{font-size:1rem}
   .hero p{font-size:.92rem}
   .method-flow{grid-template-columns:1fr}
   .method-step{min-height:auto;text-align:left}
@@ -114,6 +113,10 @@ padding:1.25rem;box-shadow:0 4px 16px rgba(8,43,76,.05)}
         padding: 14px;
     }
 }
+a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{
+outline:3px solid #082b4c!important;outline-offset:3px!important}
+.event-logo{display:block;width:100%;max-width:320px;height:130px;object-fit:contain;margin:.8rem auto}
+.accessibility-note{font-size:.9rem;line-height:1.6;color:#17212b;background:#edf6fc;padding:1rem;border-radius:10px}
 </style>""", unsafe_allow_html=True)
 
 
@@ -332,6 +335,7 @@ def show_logos():
                     <div class="logo-box">
                         <img
                             src="data:{mime};base64,{encoded}"
+                            width="240" height="94"
                             alt="Logotipo {html.escape(label)}"
                         >
                     </div>
@@ -374,11 +378,11 @@ aplicáveis à organização.</div></body></html>"""
 
 
 st.markdown("""<section class="hero">
-<span class="hero-tag">Sistema de apoio à decisão - Tecnologia e conhecimento unidos para prevenir riscos e proteger vidas.</span>
-<h1>DDS SmartSelect</h1><h2>Seleção Inteligente de Diálogos Diários de Segurança</h2>
-<p>Trabalho aprovado para apresentação no XLVI Encontro Nacional de Engenharia de Produção · ENEGEP 2026</p></section>""", unsafe_allow_html=True)
+<span class="hero-tag">Sistema de apoio à decisão</span>
+<h1>DDS SmartSelect</h1><p class="hero-subtitle">Seleção Inteligente de Diálogos Diários de Segurança</p>
+<p>Trabalho aprovado no ENEGEP USP 2026</p></section>""", unsafe_allow_html=True)
 
-st.markdown('<h3 class="section-title">Gerar nova recomendação</h3>', unsafe_allow_html=True)
+st.markdown('<h2 class="section-title">Gerar nova recomendação</h2>', unsafe_allow_html=True)
 with st.form("dds_form"):
     profile = st.text_input(
         "Perfil dos profissionais",
@@ -450,7 +454,7 @@ if "result" in st.session_state:
         st.info("As alternativas empataram. A ordem de exibição não indica superioridade.")
     reading_minutes = estimated_reading_time(str(texts[winner]))
     winner_text = html.escape(str(texts[winner])).replace("\n", "<br>")
-    st.markdown('<h3 class="section-title">DDS recomendado</h3>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-title">DDS recomendado</h2>', unsafe_allow_html=True)
     st.markdown(f"""<div class="winner-card">
     <div class="winner-kicker">{selection_label}</div>
     <div class="winner-title">{html.escape(winner)}{score_label}</div>
@@ -514,7 +518,7 @@ if "result" in st.session_state:
                 das avaliações. Quanto mais um critério diferencia as alternativas, maior tende
                 a ser seu peso. A pontuação final é a soma ponderada dos valores normalizados.""")
 
-st.markdown('<h3 class="section-title">Como funciona?</h3>', unsafe_allow_html=True)
+st.markdown('<h2 class="section-title">Como funciona?</h2>', unsafe_allow_html=True)
 st.markdown("""<div class="method-flow">
 <div class="method-step"><div class="step-number">ETAPA 1</div><div class="step-title">Contexto</div><div class="step-text">Digite o perfil dos profissionais e descreva o contexto necessário</div></div>
 <div class="method-step"><div class="step-number">ETAPA 2</div><div class="step-title">Geração</div><div class="step-text">Quatro alternativas por IA ou roteiros locais gratuitos</div></div>
@@ -523,7 +527,7 @@ st.markdown("""<div class="method-flow">
 <div class="method-step"><div class="step-number">ETAPA 5</div><div class="step-title">Recomendação</div><div class="step-text">Ranking e melhor DDS</div></div>
 </div>""", unsafe_allow_html=True)
 
-st.markdown('<h3 class="section-title">Sobre o método</h3>', unsafe_allow_html=True)
+st.markdown('<h2 class="section-title">Sobre o método</h2>', unsafe_allow_html=True)
 st.markdown("""<div class="panel">O <strong>DDS SmartSelect</strong> integra IA
 Generativa e AHP-Gaussiano, com alternativa local gratuita em caso de indisponibilidade. Os roteiros locais são gerais e precisam de adaptação pelo responsável. A avaliação pode ser feita pela IA ou por regras textuais locais segundo
 segurança, EPIs, clareza, objetividade e aplicabilidade. Essas avaliações formam uma
@@ -531,19 +535,19 @@ matriz de decisão, processada para produzir pesos, ranking e recomendação. As
 sistema não apenas gera um texto: ele compara alternativas de maneira estruturada.</div>""",
 unsafe_allow_html=True)
 
-st.markdown('<h3 class="section-title">Pesquisa desenvolvida por</h3>', unsafe_allow_html=True)
+st.markdown('<h2 class="section-title">Pesquisa desenvolvida por</h2>', unsafe_allow_html=True)
 for column, author in zip(st.columns(4), AUTHORS):
     with column:
         render_author(*author)
 
-st.markdown('<h3 class="section-title">Instituições e artigo científico</h3>',
+st.markdown('<h2 class="section-title">Instituições e artigo científico</h2>',
             unsafe_allow_html=True)
 logo_area, article_area = st.columns([2.15, 1], gap="large")
 with logo_area:
     show_logos()
 with article_area:
-    st.markdown("#### Artigo científico")
-    st.caption("Trabalho aprovado para apresentação no XLVI ENEGEP 2026.")
+    st.markdown("### Artigo científico")
+    st.caption("Trabalho aprovado no ENEGEP USP 2026.")
     if PDF_FILE.exists():
         with open(PDF_FILE, "rb") as pdf:
             st.download_button(
@@ -555,3 +559,15 @@ with article_area:
             )
     else:
         st.info(f'Inclua o arquivo "{PDF_FILE.name}" no diretório do app.')
+
+
+# Logo do evento no final da página (arquivo já existente no repositório).
+event_logo = APP_DIR / "enegep_usp.png"
+if event_logo.exists():
+    encoded_event = base64.b64encode(event_logo.read_bytes()).decode("ascii")
+    st.markdown(f'<img class="event-logo" src="data:image/png;base64,{encoded_event}" width="320" height="130" alt="Logotipo do ENEGEP na USP, edição de 2026">', unsafe_allow_html=True)
+st.markdown('<p class="event-note">Trabalho aprovado no ENEGEP USP 2026</p>', unsafe_allow_html=True)
+with st.expander("Acessibilidade deste site"):
+    st.markdown("**Site desenvolvido com recursos de acessibilidade.** Utilizamos campos identificados, descrições de logotipos, contraste de cores e organização do conteúdo para facilitar a leitura.")
+    st.markdown("**Avaliação automatizada:** Lighthouse, em 30/09/2026, com pontuação de acessibilidade 84/100 na versão avaliada. O relatório apontou restrição de zoom e ausência de região principal de navegação. Essas pendências estão em acompanhamento; a pontuação não representa certificação de conformidade.")
+    st.caption("Esta versão recebeu ajustes de layout e ainda precisa de nova avaliação. A verificação da página não certifica a acessibilidade dos arquivos baixados. Testes manuais com teclado, ampliação e leitor de tela complementam a avaliação automática.")
