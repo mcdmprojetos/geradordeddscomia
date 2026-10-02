@@ -615,7 +615,7 @@ with citation_area:
     st.markdown("### Como citar?")
     st.write("Informações de citação e DOI serão disponibilizadas após a publicação nos anais do evento.")
     st.caption("Informações em breve.")
-st.markdown('<p class="event-note">Trabalho aprovado no ENEGEP USP 2026</p>', unsafe_allow_html=True)
+#st.markdown('<p class="event-note">Trabalho aprovado no ENEGEP USP 2026</p>', unsafe_allow_html=True)
 
 st.markdown('<h2 id="acessibilidade" class="section-title">Acessibilidade</h2>', unsafe_allow_html=True)
 with st.expander("Recursos e avaliações de acessibilidade"):
