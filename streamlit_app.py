@@ -5,6 +5,7 @@ import unicodedata
 import os
 import base64
 import inspect
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +15,7 @@ try:
 except ImportError:
     genai = None
 
+LOGGER = logging.getLogger("dds_smartselect")
 APP_DIR = Path(__file__).resolve().parent
 PDF_FILE = APP_DIR / "Seleção_Inteligente_de_Textos_de_DDS.pdf"
 CRITERIA = ["Seguranca", "EPIs", "Clareza", "Objetividade", "Aplicabilidade"]
@@ -206,7 +208,7 @@ INSTRUÇÕES:
 Retorne SOMENTE JSON válido, exatamente nesta estrutura:
 {{"Texto 1":"...", "Texto 2":"...", "Texto 3":"...", "Texto 4":"..."}}
 """
-    response = client.chats.create(model="gemini-3.1-flash-lite-preview").send_message(prompt)
+    response = client.chats.create(model="gemini-3.1-flash-lite").send_message(prompt)
     texts = parse_json_response(response.text, "{")
     if set(texts) != {f"Texto {n}" for n in range(1, 5)}:
         raise ValueError("A IA não retornou as quatro alternativas esperadas.")
@@ -465,16 +467,24 @@ if submitted:
             try:
                 client = get_client()
                 texts = generate_texts(client, profile.strip(), topic.strip())
-            except Exception:
+            except Exception as exc:
+                # Não registrar o prompt nem a chave da API nos logs.
+                LOGGER.error("Falha na geração Gemini: %s", type(exc).__name__)
+                st.session_state["generation_error_type"] = type(exc).__name__
                 texts = generate_local_texts(profile.strip(), topic.strip())
                 generation_source = "Roteiro local gratuito"
+            else:
+                st.session_state.pop("generation_error_type", None)
             evaluations = ranking = weights = None
             if generation_source == "Gemini":
                 try:
                     evaluations = evaluate_texts(client, texts)
                     ranking, weights = calculate_ranking(evaluations)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOGGER.error("Falha na avaliação Gemini: %s", type(exc).__name__)
+                    st.session_state["evaluation_error_type"] = type(exc).__name__
+                else:
+                    st.session_state.pop("evaluation_error_type", None)
         evaluation_source = "Gemini"
         if evaluations is None:
             evaluations = evaluate_local_texts(texts)
@@ -492,7 +502,14 @@ if "result" in st.session_state:
     st.caption(f"Origem dos textos: {source}.")
     if source == "Roteiro local gratuito":
         st.info("Modo local gratuito: roteiro geral organizado com o contexto informado. Não é texto criado por IA. Revise e acrescente as medidas específicas da atividade antes de usar.")
+        if st.session_state.get("generation_error_type"):
+            st.warning("Não foi possível gerar textos com o Gemini. Tipo de falha: "
+                       + st.session_state["generation_error_type"]
+                       + ". Consulte os logs do Streamlit para diagnóstico. A chave da API não é exibida.")
     if st.session_state.get("evaluation_source", "").startswith("Regras locais"):
+        if source == "Gemini" and st.session_state.get("evaluation_error_type"):
+            st.warning("Textos gerados pelo Gemini, mas a avaliação usou regras locais. Tipo de falha: "
+                       + st.session_state["evaluation_error_type"] + ".")
         st.caption("Avaliação automática local por presença de elementos e características de redação. Não confirma correção técnica, adequação dos EPIs ou ausência de riscos. Notas locais não são equivalentes a notas da IA.")
     winner = ranking.iloc[0]["Texto"] if ranking is not None else st.selectbox("Escolha um roteiro para ler e baixar", list(texts), key=f"selected_{st.session_state.get('result_version', 0)}")
     winner_score = float(ranking.iloc[0]["Pontuação"]) if ranking is not None else None
